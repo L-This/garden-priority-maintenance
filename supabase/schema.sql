@@ -71,3 +71,24 @@ with check (bucket_id = 'criterion-photos');
 -- تحديث إضافي لتمييز البيانات التجريبية مستقبلاً
 alter table public.garden_assessments
 add column if not exists is_demo boolean not null default false;
+
+
+-- سياسات الحذف المطلوبة لإدارة التقييمات من الواجهة
+drop policy if exists "public delete assessments" on public.garden_assessments;
+drop policy if exists "public delete criteria" on public.assessment_criteria;
+drop policy if exists "public delete photos" on public.criterion_photos;
+
+create policy "public delete assessments"
+on public.garden_assessments
+for delete
+using (true);
+
+create policy "public delete criteria"
+on public.assessment_criteria
+for delete
+using (true);
+
+create policy "public delete photos"
+on public.criterion_photos
+for delete
+using (true);

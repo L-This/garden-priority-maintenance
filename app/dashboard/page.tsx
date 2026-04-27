@@ -18,7 +18,7 @@ function StatCard({ title, value, subtitle, icon, active, onClick }: any) {
   );
 }
 
-function IndicatorPanel({ activeMetric, gardens, stats }: any) {
+function IndicatorPanel({ activeMetric, gardens, stats, mode, onDelete }: any) {
   const metricData: any = {
     total: { title: "إجمالي الحدائق المقيمة", description: "كل الحدائق التي تم تقييمها داخل النظام.", list: gardens },
     critical: { title: "حدائق ذات أولوية قصوى", description: "الحدائق التي حصلت على نتيجة بين 90 و 100 وتحتاج تدخل عاجل.", list: gardens.filter((g: GardenAssessment) => getPriority(g.score).label === "قصوى") },
@@ -65,6 +65,11 @@ function IndicatorPanel({ activeMetric, gardens, stats }: any) {
                 <div className="bar"><div className={priority.tone} style={{ width: `${garden.score}%` }} /></div>
                 <div className="open-card">اضغط لعرض أسباب هذه الحديقة</div>
               </summary>
+              {mode === "real" && (
+                <button className="delete-btn" onClick={(event) => { event.preventDefault(); onDelete(garden.id); }}>
+                  حذف التقييم
+                </button>
+              )}
 
               <div className="reasons">
                 <b>أبرز الأسباب</b>
@@ -132,6 +137,9 @@ export default function DashboardPage() {
   const [gardens, setGardens] = useState<GardenAssessment[]>([]);
   const [activeMetric, setActiveMetric] = useState<string | null>(null);
   const [mode, setMode] = useState<"real" | "demo">("real");
+  const [search, setSearch] = useState("");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -178,21 +186,95 @@ export default function DashboardPage() {
     await loadRealData();
   }
 
+
+  async function deleteAssessment(id: string) {
+    if (mode !== "real") {
+      setMessage("الحذف متاح للبيانات الحقيقية فقط. البيانات التجريبية لا تُحذف لأنها غير محفوظة.");
+      return;
+    }
+
+    const ok = confirm("هل تريد حذف هذا التقييم نهائيًا؟ سيتم حذف المعايير والصور المرتبطة به من قاعدة البيانات.");
+    if (!ok) return;
+
+    const { error } = await supabase.from("garden_assessments").delete().eq("id", id);
+    if (error) {
+      setMessage(`تعذر حذف التقييم: ${error.message}`);
+      return;
+    }
+
+    setMessage("تم حذف التقييم بنجاح.");
+    await loadRealData();
+  }
+
+  function exportCsv() {
+    const rows = filteredGardens.map((garden) => ({
+      "اسم الحديقة": garden.name,
+      "المشروع": garden.project,
+      "الحي": garden.district,
+      "الدرجة": garden.score,
+      "الأولوية": getPriority(garden.score).label,
+      "آخر تقييم": garden.lastEvaluation,
+      "أبرز الأسباب": getMainReasons(garden).map((r) => `${r.name} ${r.value}/${r.weight}`).join(" | "),
+    }));
+
+    const header = Object.keys(rows[0] || {
+      "اسم الحديقة": "",
+      "المشروع": "",
+      "الحي": "",
+      "الدرجة": "",
+      "الأولوية": "",
+      "آخر تقييم": "",
+      "أبرز الأسباب": "",
+    });
+
+    const csv = [
+      header.join(","),
+      ...rows.map((row: any) => header.map((key) => `"${String(row[key] ?? "").replaceAll('"', '""')}"`).join(",")),
+    ].join("\n");
+
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `garden-priority-${mode}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   useEffect(() => { loadRealData(); }, []);
+
 
   const orderedGardens = useMemo(() => [...gardens].sort((a, b) => b.score - a.score), [gardens]);
 
+  const projects = useMemo(() => Array.from(new Set(gardens.map((garden) => garden.project))).sort(), [gardens]);
+
+  const filteredGardens = useMemo(() => {
+    const term = search.trim();
+    return orderedGardens.filter((garden) => {
+      const matchesSearch =
+        !term ||
+        garden.name.includes(term) ||
+        garden.project.includes(term) ||
+        garden.district.includes(term);
+
+      const matchesProject = projectFilter === "all" || garden.project === projectFilter;
+      const matchesPriority = priorityFilter === "all" || getPriority(garden.score).label === priorityFilter;
+
+      return matchesSearch && matchesProject && matchesPriority;
+    });
+  }, [orderedGardens, search, projectFilter, priorityFilter]);
+
   const stats = useMemo(() => {
-    const average = gardens.length ? Math.round(gardens.reduce((sum, g) => sum + g.score, 0) / gardens.length) : 0;
+    const average = filteredGardens.length ? Math.round(filteredGardens.reduce((sum, g) => sum + g.score, 0) / filteredGardens.length) : 0;
     return {
-      total: gardens.length,
-      critical: gardens.filter((g) => getPriority(g.score).label === "قصوى").length,
-      high: gardens.filter((g) => getPriority(g.score).label === "عالية").length,
-      medium: gardens.filter((g) => getPriority(g.score).label === "متوسطة").length,
-      low: gardens.filter((g) => getPriority(g.score).label === "منخفضة").length,
+      total: filteredGardens.length,
+      critical: filteredGardens.filter((g) => getPriority(g.score).label === "قصوى").length,
+      high: filteredGardens.filter((g) => getPriority(g.score).label === "عالية").length,
+      medium: filteredGardens.filter((g) => getPriority(g.score).label === "متوسطة").length,
+      low: filteredGardens.filter((g) => getPriority(g.score).label === "منخفضة").length,
       average,
     };
-  }, [gardens]);
+  }, [filteredGardens]);
 
   const toggle = (key: string) => setActiveMetric(activeMetric === key ? null : key);
 
@@ -220,6 +302,35 @@ export default function DashboardPage() {
           </div>
         </header>
 
+        <section className="filters">
+          <div className="filter-field">
+            <label>بحث سريع</label>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="اسم الحديقة أو المشروع أو الحي..." />
+          </div>
+
+          <div className="filter-field">
+            <label>المشروع</label>
+            <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+              <option value="all">كل المشاريع</option>
+              {projects.map((project) => <option key={project} value={project}>{project}</option>)}
+            </select>
+          </div>
+
+          <div className="filter-field">
+            <label>الأولوية</label>
+            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+              <option value="all">كل الأولويات</option>
+              <option value="قصوى">أولوية قصوى</option>
+              <option value="عالية">أولوية عالية</option>
+              <option value="متوسطة">أولوية متوسطة</option>
+              <option value="منخفضة">أولوية منخفضة</option>
+            </select>
+          </div>
+
+          <button className="filter-btn" onClick={exportCsv}>تصدير CSV</button>
+          <button className="filter-btn secondary" onClick={() => { setSearch(""); setProjectFilter("all"); setPriorityFilter("all"); }}>مسح الفلاتر</button>
+        </section>
+
         <section className="stats">
           <StatCard title="إجمالي الحدائق" value={stats.total} subtitle={mode === "demo" ? "بيانات تجريبية" : "بيانات حقيقية"} icon={icons.trees} active={activeMetric === "total"} onClick={() => toggle("total")} />
           <StatCard title="أولوية قصوى" value={stats.critical} subtitle="تدخل عاجل" icon={icons.alert} active={activeMetric === "critical"} onClick={() => toggle("critical")} />
@@ -229,7 +340,7 @@ export default function DashboardPage() {
           <StatCard title="متوسط المؤشر" value={`${stats.average}%`} subtitle={mode === "demo" ? "للتجربة فقط" : "للبيانات الحقيقية"} icon={icons.wrench} active={activeMetric === "average"} onClick={() => toggle("average")} />
         </section>
 
-        {loading ? <section className="panel empty"><h2>جاري تحميل البيانات...</h2></section> : <IndicatorPanel activeMetric={activeMetric} gardens={orderedGardens} stats={stats} />}
+        {loading ? <section className="panel empty"><h2>جاري تحميل البيانات...</h2></section> : <IndicatorPanel activeMetric={activeMetric} gardens={filteredGardens} stats={stats} mode={mode} onDelete={deleteAssessment} />}
       </section>
     </main>
   );

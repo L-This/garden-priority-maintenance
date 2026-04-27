@@ -187,3 +187,79 @@ summary::-webkit-details-marker { display: none; }
   .panel-head { align-items: stretch; flex-direction: column; }
   .stat { border-radius: 22px; }
 }
+
+
+.filters {
+  display: grid;
+  grid-template-columns: 1.2fr .8fr .7fr auto auto;
+  gap: 12px;
+  margin-top: 18px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 28px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.filter-field label {
+  display: block;
+  color: #d1fae5;
+  font-size: 12px;
+  font-weight: 900;
+  margin-bottom: 7px;
+}
+
+.filter-field input,
+.filter-field select {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.92);
+  color: #0f172a;
+  border-radius: 16px;
+  padding: 12px 14px;
+  outline: none;
+}
+
+.filter-btn {
+  align-self: end;
+  border: 0;
+  border-radius: 16px;
+  padding: 13px 16px;
+  font-weight: 900;
+  background: #fff;
+  color: #052e16;
+}
+
+.filter-btn.secondary {
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.14);
+}
+
+.delete-btn {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  border-radius: 16px;
+  padding: 10px;
+  font-weight: 900;
+}
+
+.delete-btn:hover {
+  background: #fee2e2;
+}
+
+@media (max-width: 1000px) {
+  .filters {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .filters {
+    grid-template-columns: 1fr;
+    border-radius: 22px;
+  }
+}
