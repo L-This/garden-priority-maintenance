@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { demoGardens, GardenAssessment, getMainReasons, getPriority, STORAGE_KEY } from "@/lib/data";
+import { demoGardens, GardenAssessment, getMainReasons, getPriority } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 
 const icons = { trees: "🌳", alert: "⚠️", trend: "📈", chart: "📊", gauge: "🎯", wrench: "🛠️" };
 
@@ -109,14 +110,94 @@ function IndicatorPanel({ activeMetric, gardens, stats }: any) {
   );
 }
 
-export default function DashboardPage() {
-  const [gardens, setGardens] = useState<GardenAssessment[]>(demoGardens);
-  const [activeMetric, setActiveMetric] = useState<string | null>(null);
+function mapRowsToGardens(rows: any[]): GardenAssessment[] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.garden_name,
+    project: row.project,
+    district: row.district || "غير محدد",
+    score: row.score,
+    lastEvaluation: new Date(row.evaluated_at || row.created_at).toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" }),
+    criteria: (row.assessment_criteria || []).map((criterion: any) => ({
+      name: criterion.criterion_name,
+      weight: criterion.weight,
+      selected: criterion.selected_label,
+      value: criterion.value,
+      photos: (criterion.criterion_photos || []).map((p: any) => p.photo_url),
+    })),
+  }));
+}
 
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setGardens(JSON.parse(saved));
-  }, []);
+export default function DashboardPage() {
+  const [gardens, setGardens] = useState<GardenAssessment[]>([]);
+  const [activeMetric, setActiveMetric] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  async function loadData() {
+    setLoading(true);
+    setMessage("");
+    const { data, error } = await supabase
+      .from("garden_assessments")
+      .select("*, assessment_criteria(*, criterion_photos(*))")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setMessage("تعذر تحميل البيانات من Supabase. تأكد من تشغيل ملف SQL وإعداد المتغيرات.");
+      setGardens([]);
+    } else {
+      setGardens(mapRowsToGardens(data || []));
+    }
+    setLoading(false);
+  }
+
+  async function seedDemoData() {
+    setLoading(true);
+    setMessage("جاري إضافة البيانات التجريبية...");
+    for (const garden of demoGardens) {
+      const priority = getPriority(garden.score);
+      const { data: assessment, error } = await supabase
+        .from("garden_assessments")
+        .insert({
+          garden_name: garden.name,
+          project: garden.project,
+          district: garden.district,
+          score: garden.score,
+          priority: priority.label,
+        })
+        .select("id")
+        .single();
+
+      if (error || !assessment) continue;
+
+      for (const criterion of garden.criteria) {
+        const { data: insertedCriterion } = await supabase
+          .from("assessment_criteria")
+          .insert({
+            assessment_id: assessment.id,
+            criterion_name: criterion.name,
+            weight: criterion.weight,
+            selected_label: criterion.selected,
+            value: criterion.value,
+          })
+          .select("id")
+          .single();
+
+        if (insertedCriterion && criterion.photos?.length) {
+          await supabase.from("criterion_photos").insert(
+            criterion.photos.map((photo) => ({
+              criterion_id: insertedCriterion.id,
+              photo_url: photo,
+              note: "صورة تجريبية",
+            }))
+          );
+        }
+      }
+    }
+    await loadData();
+  }
+
+  useEffect(() => { loadData(); }, []);
 
   const orderedGardens = useMemo(() => [...gardens].sort((a, b) => b.score - a.score), [gardens]);
 
@@ -144,8 +225,10 @@ export default function DashboardPage() {
             <p>واجهة نتائج تعرض المؤشرات فقط. عند الضغط على أي مؤشر تظهر البيانات الخاصة به فقط، وتبقى تفاصيل التقييم والصور مخفية داخل كل حديقة.</p>
             <div className="nav-actions">
               <Link className="action" href="/assessment">+ تقييم حديقة جديدة</Link>
-              <button className="action secondary" onClick={() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(demoGardens)); setGardens(demoGardens); }}>استعادة البيانات التجريبية</button>
+              <button className="action secondary" onClick={loadData}>تحديث البيانات</button>
+              <button className="action secondary" onClick={seedDemoData}>إضافة بيانات تجريبية</button>
             </div>
+            {message && <p>{message}</p>}
           </div>
           <div className="legend">
             <p className="legend-title">تصنيف الأولوية المعتمد</p>
@@ -164,7 +247,7 @@ export default function DashboardPage() {
           <StatCard title="متوسط المؤشر" value={`${stats.average}%`} subtitle="لكل الحدائق" icon={icons.wrench} active={activeMetric === "average"} onClick={() => toggle("average")} />
         </section>
 
-        <IndicatorPanel activeMetric={activeMetric} gardens={orderedGardens} stats={stats} />
+        {loading ? <section className="panel empty"><h2>جاري تحميل البيانات...</h2></section> : <IndicatorPanel activeMetric={activeMetric} gardens={orderedGardens} stats={stats} />}
       </section>
     </main>
   );

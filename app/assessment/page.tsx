@@ -2,26 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { criterionDefinitions, demoGardens, GardenAssessment, STORAGE_KEY, getPriority } from "@/lib/data";
+import { criterionDefinitions, getPriority } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 
 type Selections = Record<number, number[]>;
-type Photos = Record<number, string[]>;
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(file);
-  });
-}
+type FilesByCriterion = Record<number, File[]>;
 
 export default function AssessmentPage() {
   const [gardenName, setGardenName] = useState("");
   const [project, setProject] = useState("مشروع بريمان وطيبة");
   const [district, setDistrict] = useState("");
   const [selections, setSelections] = useState<Selections>({});
-  const [photos, setPhotos] = useState<Photos>({});
+  const [files, setFiles] = useState<FilesByCriterion>({});
+  const [previews, setPreviews] = useState<Record<number, string[]>>({});
   const [savedMessage, setSavedMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const criteria = useMemo(() => {
     return criterionDefinitions.map((criterion, index) => {
@@ -33,10 +28,9 @@ export default function AssessmentPage() {
         weight: criterion.weight,
         selected: selectedOptions.length ? selectedOptions.map((o) => o.label).join(" + ") : "لم يتم الاختيار",
         value: Math.min(value, criterion.weight),
-        photos: photos[index] || [],
       };
     });
-  }, [selections, photos]);
+  }, [selections]);
 
   const score = criteria.reduce((sum, item) => sum + item.value, 0);
   const priority = getPriority(score);
@@ -50,33 +44,89 @@ export default function AssessmentPage() {
     });
   };
 
-  const handlePhotos = async (criterionIndex: number, files: FileList | null) => {
-    if (!files) return;
-    const urls = await Promise.all(Array.from(files).slice(0, 4).map(fileToDataUrl));
-    setPhotos((prev) => ({ ...prev, [criterionIndex]: [...(prev[criterionIndex] || []), ...urls] }));
+  const handlePhotos = (criterionIndex: number, fileList: FileList | null) => {
+    if (!fileList) return;
+    const selectedFiles = Array.from(fileList).slice(0, 4);
+    setFiles((prev) => ({ ...prev, [criterionIndex]: [...(prev[criterionIndex] || []), ...selectedFiles] }));
+    setPreviews((prev) => ({
+      ...prev,
+      [criterionIndex]: [...(prev[criterionIndex] || []), ...selectedFiles.map((file) => URL.createObjectURL(file))],
+    }));
   };
 
-  const saveAssessment = () => {
+  async function uploadCriterionPhotos(assessmentId: string, criterionId: string, criterionIndex: number) {
+    const criterionFiles = files[criterionIndex] || [];
+    const uploadedUrls: string[] = [];
+
+    for (const file of criterionFiles) {
+      const safeName = file.name.replace(/[^\w.\\-]+/g, "_");
+      const path = `${assessmentId}/${criterionId}/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from("criterion-photos").upload(path, file);
+      if (uploadError) continue;
+
+      const { data } = supabase.storage.from("criterion-photos").getPublicUrl(path);
+      if (data.publicUrl) uploadedUrls.push(data.publicUrl);
+    }
+
+    if (uploadedUrls.length) {
+      await supabase.from("criterion_photos").insert(
+        uploadedUrls.map((url) => ({
+          criterion_id: criterionId,
+          photo_url: url,
+          note: "صورة إثبات من تقييم المشرف",
+        }))
+      );
+    }
+  }
+
+  const saveAssessment = async () => {
     if (!gardenName.trim()) {
       setSavedMessage("اكتب اسم الحديقة أولاً.");
       return;
     }
 
-    const newAssessment: GardenAssessment = {
-      id: `assessment-${Date.now()}`,
-      name: gardenName.trim(),
-      project,
-      district: district.trim() || "غير محدد",
-      score,
-      lastEvaluation: new Date().toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" }),
-      criteria,
-    };
+    setSaving(true);
+    setSavedMessage("جاري الحفظ ورفع الصور...");
 
-    const existing = localStorage.getItem(STORAGE_KEY);
-    const current = existing ? JSON.parse(existing) : demoGardens;
-    const updated = [newAssessment, ...current];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    setSavedMessage(`تم حفظ التقييم بنجاح. التصنيف: أولوية ${priority.label} (${score}%).`);
+    const { data: assessment, error } = await supabase
+      .from("garden_assessments")
+      .insert({
+        garden_name: gardenName.trim(),
+        project,
+        district: district.trim() || "غير محدد",
+        score,
+        priority: priority.label,
+      })
+      .select("id")
+      .single();
+
+    if (error || !assessment) {
+      setSavedMessage(`تعذر حفظ التقييم: ${error?.message || "خطأ غير معروف"}`);
+      setSaving(false);
+      return;
+    }
+
+    for (let index = 0; index < criteria.length; index++) {
+      const criterion = criteria[index];
+      const { data: insertedCriterion, error: criterionError } = await supabase
+        .from("assessment_criteria")
+        .insert({
+          assessment_id: assessment.id,
+          criterion_name: criterion.name,
+          weight: criterion.weight,
+          selected_label: criterion.selected,
+          value: criterion.value,
+        })
+        .select("id")
+        .single();
+
+      if (!criterionError && insertedCriterion) {
+        await uploadCriterionPhotos(assessment.id, insertedCriterion.id, index);
+      }
+    }
+
+    setSavedMessage(`تم حفظ التقييم بنجاح في Supabase. التصنيف: أولوية ${priority.label} (${score}%).`);
+    setSaving(false);
   };
 
   return (
@@ -86,7 +136,7 @@ export default function AssessmentPage() {
           <div>
             <div className="pill">📝 صفحة إدخال التقييم</div>
             <h1>تقييم حديقة جديدة</h1>
-            <p>يدخل المشرف درجات المعايير ويرفع صور إثبات الحالة. بعد الحفظ تُحسب النتيجة تلقائيًا وتظهر في لوحة المؤشرات.</p>
+            <p>يدخل المشرف درجات المعايير ويرفع صور إثبات الحالة. بعد الحفظ تُخزن البيانات في Supabase وتظهر في لوحة المؤشرات.</p>
             <div className="nav-actions">
               <Link className="action" href="/dashboard">عرض لوحة النتائج</Link>
             </div>
@@ -122,7 +172,9 @@ export default function AssessmentPage() {
               <input value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="مثال: حي الربيع" />
             </div>
 
-            <button className="submit" onClick={saveAssessment}>حفظ التقييم وإظهار النتيجة</button>
+            <button className="submit" onClick={saveAssessment} disabled={saving}>
+              {saving ? "جاري الحفظ..." : "حفظ التقييم وإظهار النتيجة"}
+            </button>
             {savedMessage && <p className="panel-desc">{savedMessage}</p>}
           </aside>
 
@@ -156,9 +208,9 @@ export default function AssessmentPage() {
                   <div className="filebox">
                     <label>صور إثبات الحالة لهذا المعيار</label>
                     <input type="file" accept="image/*" multiple onChange={(e) => handlePhotos(criterionIndex, e.target.files)} />
-                    {!!photos[criterionIndex]?.length && (
+                    {!!previews[criterionIndex]?.length && (
                       <div className="preview">
-                        {photos[criterionIndex].map((photo, idx) => <img key={idx} src={photo} alt={`صورة ${idx + 1}`} />)}
+                        {previews[criterionIndex].map((photo, idx) => <img key={idx} src={photo} alt={`صورة ${idx + 1}`} />)}
                       </div>
                     )}
                   </div>

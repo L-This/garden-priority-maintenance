@@ -1,30 +1,35 @@
-# نظام مؤشر أولوية صيانة الحدائق
+# نظام مؤشر أولوية صيانة الحدائق - نسخة Supabase
 
-نسخة نهائية أولية تحتوي على:
-- صفحة نتائج ومؤشرات: `/dashboard`
-- صفحة إدخال تقييم حديقة جديدة: `/assessment`
-- حساب تلقائي للدرجة والتصنيف
-- رفع صور لكل معيار داخل التقييم
-- حفظ البيانات مؤقتًا في LocalStorage داخل المتصفح
-- ملف SQL جاهز لاحقًا لـ Supabase داخل `supabase/schema.sql`
+الصفحات:
+- `/dashboard` لوحة النتائج
+- `/assessment` إدخال تقييم جديد
 
-## التشغيل المحلي
+## خطوات التشغيل على Vercel
 
-```bash
-npm install
-npm run dev
-```
+### 1) شغل SQL في Supabase
+افتح:
+Supabase > SQL Editor > New Query
 
-ثم افتح:
+انسخ محتوى الملف:
+`supabase/schema.sql`
+
+ثم اضغط Run.
+
+### 2) أضف متغيرات البيئة في Vercel
+Project Settings > Environment Variables
+
+أضف:
 
 ```text
-http://localhost:3000
+NEXT_PUBLIC_SUPABASE_URL=https://ydyrpkstkuhbaqwhlwdp.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=ضع_anon_key_هنا
 ```
 
-## النشر على Vercel
+ثم Redeploy.
 
-ارفع الملفات إلى GitHub ثم اربط المستودع مع Vercel.
+### 3) التجربة
+افتح `/assessment` وأدخل تقييم جديد مع صور.
+ثم افتح `/dashboard` واضغط تحديث البيانات.
 
-## ملاحظة مهمة
-
-هذه النسخة تحفظ البيانات داخل المتصفح للتجربة السريعة. عند ربط Supabase سنستبدل LocalStorage بقاعدة بيانات حقيقية وتخزين صور في Supabase Storage.
+## ملاحظة أمنية
+السياسات الحالية مفتوحة للتجربة فقط. في النسخة الإنتاجية نضيف تسجيل دخول وصلاحيات للمشرفين.
