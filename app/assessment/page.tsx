@@ -40,12 +40,21 @@ export default function AssessmentPage() {
   const [files, setFiles] = useState<FilesMap>({});
   const [previews, setPreviews] = useState<PreviewMap>({});
   const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState<{
+    type: "success" | "error";
+    title: string;
+    body: string;
+    score?: number;
+    priority?: string;
+    garden?: string;
+  } | null>(null);
   const [loadingMaster, setLoadingMaster] = useState(false);
   const [saving, setSaving] = useState(false);
   const criteriaRef = useRef<HTMLElement | null>(null);
 
   async function loadMasterData() {
     setLoadingMaster(true);
+    setNotice(null);
     setMessage("جاري تحديث المشاريع والحدائق...");
 
     const [projectsRes, gardensRes] = await Promise.all([
@@ -237,10 +246,23 @@ export default function AssessmentPage() {
         }
       }
 
-      setMessage(`تم حفظ التقييم بنجاح. النتيجة ${totalScore}% - أولوية ${priority.label}.`);
+      setNotice({
+        type: "success",
+        title: "تم حفظ التقييم بنجاح",
+        body: "تم تسجيل التقييم وحفظ درجات البنود والصور المرتبطة بها.",
+        score: totalScore,
+        priority: priority.label,
+        garden: gardenName,
+      });
+      setMessage("");
       resetForm();
     } catch (error: any) {
-      setMessage(`فشل الحفظ: ${error.message || "خطأ غير معروف"}`);
+      setNotice({
+        type: "error",
+        title: "تعذر حفظ التقييم",
+        body: error.message || "حدث خطأ غير معروف أثناء الحفظ.",
+      });
+      setMessage("");
     } finally {
       setSaving(false);
     }
@@ -262,7 +284,7 @@ export default function AssessmentPage() {
                 {loadingMaster ? "جاري التحديث..." : "تحديث المشاريع والحدائق"}
               </button>
             </div>
-            {message && <p>{message}</p>}
+            {message && !notice && <p>{message}</p>}
           </div>
 
           <div className="legend">
@@ -274,6 +296,43 @@ export default function AssessmentPage() {
             </div>
           </div>
         </header>
+
+        {notice && (
+          <section className={`save-notice ${notice.type}`}>
+            <div className="notice-icon">{notice.type === "success" ? "✓" : "!"}</div>
+            <div className="notice-content">
+              <span className="notice-kicker">
+                {notice.type === "success" ? "نتيجة التقييم" : "تنبيه"}
+              </span>
+              <h2>{notice.title}</h2>
+              <p>{notice.body}</p>
+
+              {notice.type === "success" && (
+                <div className="notice-summary">
+                  <div>
+                    <span>الحديقة</span>
+                    <b>{notice.garden}</b>
+                  </div>
+                  <div>
+                    <span>النتيجة</span>
+                    <b>{notice.score}%</b>
+                  </div>
+                  <div>
+                    <span>الأولوية</span>
+                    <b>أولوية {notice.priority}</b>
+                  </div>
+                </div>
+              )}
+
+              <div className="notice-actions">
+                <Link className="notice-action primary" href="/dashboard">عرض لوحة النتائج</Link>
+                <button className="notice-action" onClick={() => setNotice(null)}>
+                  {notice.type === "success" ? "تقييم حديقة أخرى" : "إغلاق التنبيه"}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="form-shell">
           <aside className="form-card">
