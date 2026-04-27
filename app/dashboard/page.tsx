@@ -131,19 +131,22 @@ function mapRowsToGardens(rows: any[]): GardenAssessment[] {
 export default function DashboardPage() {
   const [gardens, setGardens] = useState<GardenAssessment[]>([]);
   const [activeMetric, setActiveMetric] = useState<string | null>(null);
+  const [mode, setMode] = useState<"real" | "demo">("real");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
-  async function loadData() {
+  async function loadRealData() {
+    setMode("real");
     setLoading(true);
     setMessage("");
     const { data, error } = await supabase
       .from("garden_assessments")
       .select("*, assessment_criteria(*, criterion_photos(*))")
+      .or("is_demo.is.null,is_demo.eq.false")
       .order("created_at", { ascending: false });
 
     if (error) {
-      setMessage("تعذر تحميل البيانات من Supabase. تأكد من تشغيل ملف SQL وإعداد المتغيرات.");
+      setMessage("تعذر تحميل البيانات الحقيقية من Supabase. تأكد من تشغيل ملف SQL وإعداد المتغيرات.");
       setGardens([]);
     } else {
       setGardens(mapRowsToGardens(data || []));
@@ -151,53 +154,31 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  async function seedDemoData() {
-    setLoading(true);
-    setMessage("جاري إضافة البيانات التجريبية...");
-    for (const garden of demoGardens) {
-      const priority = getPriority(garden.score);
-      const { data: assessment, error } = await supabase
-        .from("garden_assessments")
-        .insert({
-          garden_name: garden.name,
-          project: garden.project,
-          district: garden.district,
-          score: garden.score,
-          priority: priority.label,
-        })
-        .select("id")
-        .single();
-
-      if (error || !assessment) continue;
-
-      for (const criterion of garden.criteria) {
-        const { data: insertedCriterion } = await supabase
-          .from("assessment_criteria")
-          .insert({
-            assessment_id: assessment.id,
-            criterion_name: criterion.name,
-            weight: criterion.weight,
-            selected_label: criterion.selected,
-            value: criterion.value,
-          })
-          .select("id")
-          .single();
-
-        if (insertedCriterion && criterion.photos?.length) {
-          await supabase.from("criterion_photos").insert(
-            criterion.photos.map((photo) => ({
-              criterion_id: insertedCriterion.id,
-              photo_url: photo,
-              note: "صورة تجريبية",
-            }))
-          );
-        }
-      }
-    }
-    await loadData();
+  function showDemoData() {
+    setMode("demo");
+    setActiveMetric(null);
+    setMessage("أنت الآن تستعرض بيانات تجريبية من داخل الواجهة فقط، ولن يتم حفظها في قاعدة البيانات.");
+    setGardens(demoGardens);
+    setLoading(false);
   }
 
-  useEffect(() => { loadData(); }, []);
+  async function deleteDemoDataFromDatabase() {
+    const ok = confirm("سيتم حذف البيانات التجريبية الموجودة داخل Supabase فقط. هل تريد المتابعة؟");
+    if (!ok) return;
+
+    setLoading(true);
+    setMessage("جاري حذف البيانات التجريبية من قاعدة البيانات...");
+
+    const demoNames = demoGardens.map((g) => g.name);
+
+    await supabase.from("garden_assessments").delete().eq("is_demo", true);
+    await supabase.from("garden_assessments").delete().in("garden_name", demoNames);
+
+    setMessage("تم حذف البيانات التجريبية من قاعدة البيانات. يتم الآن عرض البيانات الحقيقية فقط.");
+    await loadRealData();
+  }
+
+  useEffect(() => { loadRealData(); }, []);
 
   const orderedGardens = useMemo(() => [...gardens].sort((a, b) => b.score - a.score), [gardens]);
 
@@ -225,8 +206,9 @@ export default function DashboardPage() {
             <p>واجهة نتائج تعرض المؤشرات فقط. عند الضغط على أي مؤشر تظهر البيانات الخاصة به فقط، وتبقى تفاصيل التقييم والصور مخفية داخل كل حديقة.</p>
             <div className="nav-actions">
               <Link className="action" href="/assessment">+ تقييم حديقة جديدة</Link>
-              <button className="action secondary" onClick={loadData}>تحديث البيانات</button>
-              <button className="action secondary" onClick={seedDemoData}>إضافة بيانات تجريبية</button>
+              <button className={`action ${mode === "real" ? "" : "secondary"}`} onClick={loadRealData}>عرض البيانات الحقيقية</button>
+              <button className={`action ${mode === "demo" ? "" : "secondary"}`} onClick={showDemoData}>عرض البيانات التجريبية</button>
+              <button className="action secondary" onClick={deleteDemoDataFromDatabase}>حذف التجريبي من القاعدة</button>
             </div>
             {message && <p>{message}</p>}
           </div>
@@ -239,12 +221,12 @@ export default function DashboardPage() {
         </header>
 
         <section className="stats">
-          <StatCard title="إجمالي الحدائق" value={stats.total} subtitle="حدائق تم تقييمها" icon={icons.trees} active={activeMetric === "total"} onClick={() => toggle("total")} />
+          <StatCard title="إجمالي الحدائق" value={stats.total} subtitle={mode === "demo" ? "بيانات تجريبية" : "بيانات حقيقية"} icon={icons.trees} active={activeMetric === "total"} onClick={() => toggle("total")} />
           <StatCard title="أولوية قصوى" value={stats.critical} subtitle="تدخل عاجل" icon={icons.alert} active={activeMetric === "critical"} onClick={() => toggle("critical")} />
           <StatCard title="أولوية عالية" value={stats.high} subtitle="صيانة قريبة" icon={icons.trend} active={activeMetric === "high"} onClick={() => toggle("high")} />
           <StatCard title="أولوية متوسطة" value={stats.medium} subtitle="ضمن الخطة" icon={icons.chart} active={activeMetric === "medium"} onClick={() => toggle("medium")} />
           <StatCard title="أولوية منخفضة" value={stats.low} subtitle="متابعة دورية" icon={icons.gauge} active={activeMetric === "low"} onClick={() => toggle("low")} />
-          <StatCard title="متوسط المؤشر" value={`${stats.average}%`} subtitle="لكل الحدائق" icon={icons.wrench} active={activeMetric === "average"} onClick={() => toggle("average")} />
+          <StatCard title="متوسط المؤشر" value={`${stats.average}%`} subtitle={mode === "demo" ? "للتجربة فقط" : "للبيانات الحقيقية"} icon={icons.wrench} active={activeMetric === "average"} onClick={() => toggle("average")} />
         </section>
 
         {loading ? <section className="panel empty"><h2>جاري تحميل البيانات...</h2></section> : <IndicatorPanel activeMetric={activeMetric} gardens={orderedGardens} stats={stats} />}

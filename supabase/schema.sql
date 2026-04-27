@@ -66,3 +66,8 @@ using (bucket_id = 'criterion-photos');
 create policy "public upload criterion photos bucket"
 on storage.objects for insert
 with check (bucket_id = 'criterion-photos');
+
+
+-- تحديث إضافي لتمييز البيانات التجريبية مستقبلاً
+alter table public.garden_assessments
+add column if not exists is_demo boolean not null default false;
