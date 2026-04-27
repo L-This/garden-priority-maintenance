@@ -1,22 +1,50 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { criterionDefinitions, getPriority } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 
 type Selections = Record<number, number[]>;
 type FilesByCriterion = Record<number, File[]>;
+type Employee = { id: string; name: string };
+type Project = { id: string; employee_id: string; name: string };
+type Garden = { id: string; project_id: string; name: string; district?: string | null };
 
 export default function AssessmentPage() {
-  const [gardenName, setGardenName] = useState("");
-  const [project, setProject] = useState("مشروع بريمان وطيبة");
-  const [district, setDistrict] = useState("");
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [gardens, setGardens] = useState<Garden[]>([]);
+
+  const [employeeId, setEmployeeId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [gardenId, setGardenId] = useState("");
+
   const [selections, setSelections] = useState<Selections>({});
   const [files, setFiles] = useState<FilesByCriterion>({});
   const [previews, setPreviews] = useState<Record<number, string[]>>({});
   const [savedMessage, setSavedMessage] = useState("");
   const [saving, setSaving] = useState(false);
+
+  async function loadMasterData() {
+    const [e, p, g] = await Promise.all([
+      supabase.from("employees").select("id,name").order("name"),
+      supabase.from("projects").select("id,employee_id,name").order("name"),
+      supabase.from("gardens").select("id,project_id,name,district").order("name"),
+    ]);
+    if (e.data) setEmployees(e.data);
+    if (p.data) setProjects(p.data);
+    if (g.data) setGardens(g.data);
+  }
+
+  useEffect(() => { loadMasterData(); }, []);
+
+  const employeeProjects = projects.filter((p) => !employeeId || p.employee_id === employeeId);
+  const projectGardens = gardens.filter((g) => !projectId || g.project_id === projectId);
+
+  const selectedEmployee = employees.find((e) => e.id === employeeId);
+  const selectedProject = projects.find((p) => p.id === projectId);
+  const selectedGarden = gardens.find((g) => g.id === gardenId);
 
   const criteria = useMemo(() => {
     return criterionDefinitions.map((criterion, index) => {
@@ -59,7 +87,7 @@ export default function AssessmentPage() {
     const uploadedUrls: string[] = [];
 
     for (const file of criterionFiles) {
-      const safeName = file.name.replace(/[^\w.\\-]+/g, "_");
+      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
       const path = `${assessmentId}/${criterionId}/${Date.now()}-${safeName}`;
       const { error: uploadError } = await supabase.storage.from("criterion-photos").upload(path, file);
       if (uploadError) continue;
@@ -69,19 +97,17 @@ export default function AssessmentPage() {
     }
 
     if (uploadedUrls.length) {
-      await supabase.from("criterion_photos").insert(
-        uploadedUrls.map((url) => ({
-          criterion_id: criterionId,
-          photo_url: url,
-          note: "صورة إثبات من تقييم المشرف",
-        }))
-      );
+      await supabase.from("criterion_photos").insert(uploadedUrls.map((url) => ({
+        criterion_id: criterionId,
+        photo_url: url,
+        note: "صورة إثبات من تقييم المشرف",
+      })));
     }
   }
 
   const saveAssessment = async () => {
-    if (!gardenName.trim()) {
-      setSavedMessage("اكتب اسم الحديقة أولاً.");
+    if (!employeeId || !projectId || !gardenId) {
+      setSavedMessage("اختر الموظف والمشروع والحديقة أولاً.");
       return;
     }
 
@@ -91,9 +117,13 @@ export default function AssessmentPage() {
     const { data: assessment, error } = await supabase
       .from("garden_assessments")
       .insert({
-        garden_name: gardenName.trim(),
-        project,
-        district: district.trim() || "غير محدد",
+        employee_id: employeeId,
+        project_id: projectId,
+        garden_id: gardenId,
+        employee_name: selectedEmployee?.name,
+        garden_name: selectedGarden?.name || "",
+        project: selectedProject?.name || "",
+        district: selectedGarden?.district || "غير محدد",
         score,
         priority: priority.label,
       })
@@ -125,7 +155,7 @@ export default function AssessmentPage() {
       }
     }
 
-    setSavedMessage(`تم حفظ التقييم بنجاح في Supabase. التصنيف: أولوية ${priority.label} (${score}%).`);
+    setSavedMessage(`تم حفظ التقييم بنجاح. التصنيف: أولوية ${priority.label} (${score}%).`);
     setSaving(false);
   };
 
@@ -136,9 +166,10 @@ export default function AssessmentPage() {
           <div>
             <div className="pill">📝 صفحة إدخال التقييم</div>
             <h1>تقييم حديقة جديدة</h1>
-            <p>يدخل المشرف درجات المعايير ويرفع صور إثبات الحالة. بعد الحفظ تُخزن البيانات في Supabase وتظهر في لوحة المؤشرات.</p>
+            <p>اختر الموظف ثم المشروع ثم الحديقة من البيانات الأساسية، وبعدها أدخل درجات المعايير وارفع صور الإثبات.</p>
             <div className="nav-actions">
               <Link className="action" href="/dashboard">عرض لوحة النتائج</Link>
+              <Link className="action secondary" href="/admin-data">إدارة البيانات الأساسية</Link>
             </div>
           </div>
           <div className="legend">
@@ -153,23 +184,27 @@ export default function AssessmentPage() {
 
         <section className="form-shell">
           <aside className="form-card">
-            <h2>بيانات الحديقة</h2>
+            <h2>بيانات التقييم</h2>
             <div className="field">
-              <label>اسم الحديقة</label>
-              <input value={gardenName} onChange={(e) => setGardenName(e.target.value)} placeholder="مثال: حديقة الربيع" />
-            </div>
-            <div className="field">
-              <label>المشروع</label>
-              <select value={project} onChange={(e) => setProject(e.target.value)}>
-                <option>مشروع بريمان وطيبة</option>
-                <option>مشروع الحمدانية</option>
-                <option>مشروع التحلية</option>
-                <option>مشروع الشروق</option>
+              <label>الموظف المسؤول</label>
+              <select value={employeeId} onChange={(e) => { setEmployeeId(e.target.value); setProjectId(""); setGardenId(""); }}>
+                <option value="">اختر موظف</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </div>
             <div className="field">
-              <label>الحي / الموقع</label>
-              <input value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="مثال: حي الربيع" />
+              <label>المشروع</label>
+              <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setGardenId(""); }}>
+                <option value="">اختر مشروع</option>
+                {employeeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>الحديقة</label>
+              <select value={gardenId} onChange={(e) => setGardenId(e.target.value)}>
+                <option value="">اختر حديقة</option>
+                {projectGardens.map((g) => <option key={g.id} value={g.id}>{g.name} - {g.district || "بدون حي"}</option>)}
+              </select>
             </div>
 
             <button className="submit" onClick={saveAssessment} disabled={saving}>
@@ -192,14 +227,8 @@ export default function AssessmentPage() {
                     {criterion.options.map((option, optionIndex) => {
                       const active = (selections[criterionIndex] || []).includes(optionIndex);
                       return (
-                        <button
-                          key={option.label}
-                          className={`option ${active ? "active" : ""}`}
-                          onClick={() => toggleOption(criterionIndex, optionIndex, criterion.multi)}
-                        >
-                          <b>{option.label}</b>
-                          <br />
-                          <small>{option.value} درجات</small>
+                        <button key={option.label} className={`option ${active ? "active" : ""}`} onClick={() => toggleOption(criterionIndex, optionIndex, criterion.multi)}>
+                          <b>{option.label}</b><br /><small>{option.value} درجات</small>
                         </button>
                       );
                     })}

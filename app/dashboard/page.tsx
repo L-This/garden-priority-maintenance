@@ -121,6 +121,7 @@ function mapRowsToGardens(rows: any[]): GardenAssessment[] {
     name: row.garden_name,
     project: row.project,
     district: row.district || "غير محدد",
+    employeeName: row.employee_name || "غير محدد",
     score: row.score,
     lastEvaluation: new Date(row.evaluated_at || row.created_at).toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" }),
     criteria: (row.assessment_criteria || []).map((criterion: any) => ({
@@ -283,6 +284,7 @@ export default function DashboardPage() {
             <p>واجهة نتائج تبدأ ببوابات المشاريع. اختر كافة المشاريع أو مشروعًا محددًا لعرض مؤشراته، ثم اضغط على أي مؤشر لعرض حدائقه وتفاصيله.</p>
             <div className="nav-actions">
               <Link className="action" href="/assessment">+ تقييم حديقة جديدة</Link>
+              <Link className="action secondary" href="/admin-data">إدارة البيانات الأساسية</Link>
               <button className={`action ${mode === "real" ? "" : "secondary"}`} onClick={loadRealData}>عرض البيانات الحقيقية</button>
               <button className={`action ${mode === "demo" ? "" : "secondary"}`} onClick={showDemoData}>عرض البيانات التجريبية</button>
             </div>

@@ -193,3 +193,28 @@ export function getPriority(score: number) {
 export function getMainReasons(garden: GardenAssessment) {
   return [...garden.criteria].sort((a, b) => b.value - a.value).slice(0, 3);
 }
+
+
+export type Employee = {
+  id: string;
+  name: string;
+  jobTitle?: string | null;
+  status?: string | null;
+};
+
+export type Project = {
+  id: string;
+  employeeId: string;
+  name: string;
+  region?: string | null;
+  status?: string | null;
+};
+
+export type Garden = {
+  id: string;
+  projectId: string;
+  name: string;
+  district?: string | null;
+  locationUrl?: string | null;
+  status?: string | null;
+};
