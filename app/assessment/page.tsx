@@ -5,53 +5,47 @@ import { useEffect, useMemo, useState } from "react";
 import { criterionDefinitions, getPriority } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 
-type Project = { id: string; name: string; raw?: any };
-type Garden = { id: string; project_id: string; name: string; district?: string | null; raw?: any };
+type ProjectRow = {
+  id: string;
+  name?: string | null;
+  project_name?: string | null;
+  title?: string | null;
+};
+
+type GardenRow = {
+  id: string;
+  project_id: string;
+  name?: string | null;
+  garden_name?: string | null;
+  title?: string | null;
+  district?: string | null;
+};
+
 type Scores = Record<string, number>;
 type FilesMap = Record<string, File | null>;
 type PreviewMap = Record<string, string>;
 
-function getProjectName(row: any) {
-  return String(row?.name || row?.project_name || row?.title || row?.slug || row?.id || "مشروع بدون اسم");
-}
+const projectLabel = (project: ProjectRow) =>
+  project.name || project.project_name || project.title || "مشروع بدون اسم";
 
-function getGardenName(row: any) {
-  return String(row?.name || row?.garden_name || row?.title || row?.slug || row?.id || "حديقة بدون اسم");
-}
-
-function normalizeProject(row: any): Project {
-  return {
-    id: String(row?.id || row?.project_id || row?.slug || getProjectName(row)),
-    name: getProjectName(row),
-    raw: row,
-  };
-}
-
-function normalizeGarden(row: any): Garden {
-  return {
-    id: String(row?.id || row?.garden_id || row?.slug || getGardenName(row)),
-    project_id: String(row?.project_id || row?.projectId || row?.project || ""),
-    name: getGardenName(row),
-    district: row?.district || row?.neighborhood || row?.area || null,
-    raw: row,
-  };
-}
+const gardenLabel = (garden: GardenRow) =>
+  garden.name || garden.garden_name || garden.title || "حديقة بدون اسم";
 
 export default function AssessmentPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [gardens, setGardens] = useState<Garden[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [gardens, setGardens] = useState<GardenRow[]>([]);
   const [projectId, setProjectId] = useState("");
   const [gardenId, setGardenId] = useState("");
   const [scores, setScores] = useState<Scores>({});
   const [files, setFiles] = useState<FilesMap>({});
   const [previews, setPreviews] = useState<PreviewMap>({});
-  const [msg, setMsg] = useState("");
-  const [loadingMaster, setLoadingMaster] = useState(true);
+  const [message, setMessage] = useState("");
+  const [loadingMaster, setLoadingMaster] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  async function loadMaster() {
+  async function loadMasterData() {
     setLoadingMaster(true);
-    setMsg("جاري تحميل المشاريع والحدائق...");
+    setMessage("جاري تحديث المشاريع والحدائق...");
 
     const [projectsRes, gardensRes] = await Promise.all([
       supabase.from("projects").select("*").order("name", { ascending: true }),
@@ -59,45 +53,52 @@ export default function AssessmentPage() {
     ]);
 
     if (projectsRes.error) {
+      setMessage(`تعذر تحميل المشاريع: ${projectsRes.error.message}`);
       setProjects([]);
-      setMsg(`تعذر تحميل المشاريع: ${projectsRes.error.message}`);
       setLoadingMaster(false);
       return;
     }
 
     if (gardensRes.error) {
+      setMessage(`تعذر تحميل الحدائق: ${gardensRes.error.message}`);
       setGardens([]);
-      setMsg(`تم تحميل المشاريع، لكن تعذر تحميل الحدائق: ${gardensRes.error.message}`);
-    } else {
-      setGardens((gardensRes.data || []).map(normalizeGarden));
-      setMsg("");
+      setLoadingMaster(false);
+      return;
     }
 
-    const normalizedProjects = (projectsRes.data || []).map(normalizeProject).filter((p) => p.name.trim());
-    setProjects(normalizedProjects);
+    setProjects(projectsRes.data || []);
+    setGardens(gardensRes.data || []);
+    setMessage("");
     setLoadingMaster(false);
   }
 
   useEffect(() => {
-    loadMaster();
+    loadMasterData();
   }, []);
 
-  const projectGardens = useMemo(() => gardens.filter((g) => g.project_id === projectId), [gardens, projectId]);
-  const selectedProject = projects.find((p) => p.id === projectId);
-  const selectedGarden = gardens.find((g) => g.id === gardenId);
+  const selectedProject = projects.find((project) => project.id === projectId);
+  const selectedGarden = gardens.find((garden) => garden.id === gardenId);
+
+  const projectGardens = useMemo(() => {
+    if (!projectId) return [];
+    return gardens.filter((garden) => garden.project_id === projectId);
+  }, [gardens, projectId]);
 
   const criteria = useMemo(() => {
-    return criterionDefinitions.map((criterion, ci) => {
+    return criterionDefinitions.map((criterion, criterionIndex) => {
       const itemLines = criterion.items
-        .map((it, ii) => {
-          const key = `${ci}-${ii}`;
-          const val = Math.min(Number(scores[key] || 0), it.max);
-          return val > 0 ? `${it.label}: ${val}/${it.max}` : "";
+        .map((item, itemIndex) => {
+          const key = `${criterionIndex}-${itemIndex}`;
+          const value = Math.min(Number(scores[key] || 0), item.max);
+          return value > 0 ? `${item.label}: ${value}/${item.max}` : "";
         })
         .filter(Boolean);
 
       const value = Math.min(
-        criterion.items.reduce((sum, it, ii) => sum + Math.min(Number(scores[`${ci}-${ii}`] || 0), it.max), 0),
+        criterion.items.reduce((sum, item, itemIndex) => {
+          const key = `${criterionIndex}-${itemIndex}`;
+          return sum + Math.min(Number(scores[key] || 0), item.max);
+        }, 0),
         criterion.weight
       );
 
@@ -110,100 +111,138 @@ export default function AssessmentPage() {
     });
   }, [scores]);
 
-  const score = criteria.reduce((s, i) => s + i.value, 0);
-  const priority = getPriority(score);
+  const totalScore = criteria.reduce((sum, item) => sum + item.value, 0);
+  const priority = getPriority(totalScore);
 
-  function setItemScore(ci: number, ii: number, max: number, value: string) {
-    const num = Math.max(0, Math.min(Number(value || 0), max));
-    setScores((prev) => ({ ...prev, [`${ci}-${ii}`]: num }));
+  function setItemScore(criterionIndex: number, itemIndex: number, max: number, value: string) {
+    const numberValue = Number(value || 0);
+    const normalized = Math.max(0, Math.min(numberValue, max));
+    setScores((current) => ({
+      ...current,
+      [`${criterionIndex}-${itemIndex}`]: normalized,
+    }));
   }
 
-  function setItemFile(ci: number, ii: number, file: File | null) {
-    const key = `${ci}-${ii}`;
+  function setItemFile(criterionIndex: number, itemIndex: number, file: File | null) {
     if (!file) return;
-    setFiles((prev) => ({ ...prev, [key]: file }));
-    setPreviews((prev) => ({ ...prev, [key]: URL.createObjectURL(file) }));
+    const key = `${criterionIndex}-${itemIndex}`;
+    setFiles((current) => ({ ...current, [key]: file }));
+    setPreviews((current) => ({ ...current, [key]: URL.createObjectURL(file) }));
   }
 
-  async function uploadPhoto(assessmentId: string, criterionId: string, key: string) {
-    const file = files[key];
+  function resetForm() {
+    setGardenId("");
+    setScores({});
+    setFiles({});
+    setPreviews({});
+  }
+
+  async function uploadItemPhoto(assessmentId: string, criterionId: string, itemKey: string, itemLabel: string) {
+    const file = files[itemKey];
     if (!file) return null;
-    const safe = file.name.replace(/[^\w.\-]+/g, "_");
-    const path = `${assessmentId}/${criterionId}/${key}-${Date.now()}-${safe}`;
-    const { error } = await supabase.storage.from("criterion-photos").upload(path, file, { upsert: true });
-    if (error) return null;
-    return supabase.storage.from("criterion-photos").getPublicUrl(path).data.publicUrl;
-  }
 
-  async function insertAssessmentRecord() {
-    const payload: any = {
-      garden_id: gardenId,
-      garden_name: selectedGarden?.name || "",
-      project: selectedProject?.name || "",
-      district: selectedGarden?.district || "غير محدد",
-      score,
-      priority: priority.label,
-    };
+    const safeName = file.name.replace(/[^\\w.\\-]+/g, "_");
+    const path = `${assessmentId}/${criterionId}/${itemKey}-${Date.now()}-${safeName}`;
 
-    let result = await supabase.from("garden_assessments").insert(payload).select("id").single();
+    const { error: uploadError } = await supabase.storage
+      .from("criterion-photos")
+      .upload(path, file, { upsert: true });
 
-    // توافق مع الجداول القديمة التي قد تستخدم total_score / project_name
-    if (result.error) {
-      const fallbackPayload: any = {
-        garden_id: gardenId,
-        garden_name: selectedGarden?.name || "",
-        project_name: selectedProject?.name || "",
-        district: selectedGarden?.district || "غير محدد",
-        total_score: score,
-        priority: priority.label,
-      };
-      result = await supabase.from("garden_assessments").insert(fallbackPayload).select("id").single();
+    if (uploadError) {
+      throw new Error(`تعذر رفع صورة ${itemLabel}: ${uploadError.message}`);
     }
 
-    return result;
+    const { data } = supabase.storage.from("criterion-photos").getPublicUrl(path);
+    return data.publicUrl || null;
   }
 
   async function saveAssessment() {
-    if (!projectId || !gardenId) {
-      setMsg("اختر المشروع والحديقة أولاً.");
+    if (!projectId || !selectedProject) {
+      setMessage("اختر المشروع أولاً.");
+      return;
+    }
+
+    if (!gardenId || !selectedGarden) {
+      setMessage("اختر الحديقة أولاً.");
+      return;
+    }
+
+    const hasAnyScore = Object.values(scores).some((value) => Number(value) > 0);
+    if (!hasAnyScore) {
+      setMessage("أدخل درجة واحدة على الأقل قبل الحفظ.");
       return;
     }
 
     setSaving(true);
-    setMsg("جاري الحفظ ورفع الصور...");
+    setMessage("جاري حفظ التقييم ورفع الصور...");
 
-    const { data: assessment, error } = await insertAssessmentRecord();
-    if (error || !assessment) {
-      setMsg(`تعذر حفظ التقييم: ${error?.message || "خطأ غير معروف"}`);
-      setSaving(false);
-      return;
-    }
+    try {
+      const projectName = projectLabel(selectedProject);
+      const gardenName = gardenLabel(selectedGarden);
 
-    for (let ci = 0; ci < criteria.length; ci++) {
-      const c = criteria[ci];
-      const { data: criterion, error: criterionError } = await supabase
-        .from("assessment_criteria")
-        .insert({ assessment_id: assessment.id, criterion_name: c.name, weight: c.weight, selected_label: c.selected, value: c.value })
+      const { data: assessment, error: assessmentError } = await supabase
+        .from("garden_assessments")
+        .insert({
+          garden_id: gardenId,
+          garden_name: gardenName,
+          project: projectName,
+          district: selectedGarden.district || "بدون حي",
+          score: totalScore,
+          priority: priority.label,
+          is_demo: false,
+        })
         .select("id")
         .single();
 
-      if (!criterionError && criterion) {
-        for (let ii = 0; ii < criterionDefinitions[ci].items.length; ii++) {
-          const key = `${ci}-${ii}`;
-          const url = await uploadPhoto(assessment.id, criterion.id, key);
-          if (url) {
-            await supabase.from("criterion_photos").insert({
-              criterion_id: criterion.id,
-              photo_url: url,
-              note: `صورة بند ${criterionDefinitions[ci].items[ii].label}`,
+      if (assessmentError || !assessment) {
+        throw new Error(assessmentError?.message || "تعذر إنشاء سجل التقييم.");
+      }
+
+      for (let criterionIndex = 0; criterionIndex < criteria.length; criterionIndex++) {
+        const criterion = criteria[criterionIndex];
+
+        const { data: insertedCriterion, error: criterionError } = await supabase
+          .from("assessment_criteria")
+          .insert({
+            assessment_id: assessment.id,
+            criterion_name: criterion.name,
+            weight: criterion.weight,
+            selected_label: criterion.selected,
+            value: criterion.value,
+          })
+          .select("id")
+          .single();
+
+        if (criterionError || !insertedCriterion) {
+          throw new Error(criterionError?.message || `تعذر حفظ معيار ${criterion.name}.`);
+        }
+
+        for (let itemIndex = 0; itemIndex < criterionDefinitions[criterionIndex].items.length; itemIndex++) {
+          const item = criterionDefinitions[criterionIndex].items[itemIndex];
+          const itemKey = `${criterionIndex}-${itemIndex}`;
+          const imageUrl = await uploadItemPhoto(assessment.id, insertedCriterion.id, itemKey, item.label);
+
+          if (imageUrl) {
+            const { error: photoError } = await supabase.from("criterion_photos").insert({
+              criterion_id: insertedCriterion.id,
+              photo_url: imageUrl,
+              note: `صورة بند: ${item.label}`,
             });
+
+            if (photoError) {
+              throw new Error(`تعذر حفظ رابط صورة ${item.label}: ${photoError.message}`);
+            }
           }
         }
       }
-    }
 
-    setMsg(`تم حفظ التقييم بنجاح. التصنيف: أولوية ${priority.label} (${score}%).`);
-    setSaving(false);
+      setMessage(`تم حفظ التقييم بنجاح. النتيجة ${totalScore}% - أولوية ${priority.label}.`);
+      resetForm();
+    } catch (error: any) {
+      setMessage(`فشل الحفظ: ${error.message || "خطأ غير معروف"}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -213,16 +252,22 @@ export default function AssessmentPage() {
           <div>
             <div className="pill">📝 صفحة إدخال التقييم</div>
             <h1>تقييم حديقة جديدة</h1>
-            <p>اختر المشروع والحديقة من القاعدة، ثم أدخل درجة كل بند وارفع صورة مستقلة لكل بند عند الحاجة.</p>
+            <p>
+              اختر المشروع والحديقة من القاعدة، ثم أدخل درجة كل بند وارفع صورة مستقلة لكل بند عند الحاجة.
+            </p>
             <div className="nav-actions">
               <Link className="action" href="/dashboard">عرض لوحة النتائج</Link>
-              <button className="action secondary" onClick={loadMaster} type="button">تحديث المشاريع والحدائق</button>
+              <button className="action secondary" onClick={loadMasterData} disabled={loadingMaster}>
+                {loadingMaster ? "جاري التحديث..." : "تحديث المشاريع والحدائق"}
+              </button>
             </div>
+            {message && <p>{message}</p>}
           </div>
+
           <div className="legend">
-            <p>النتيجة الحالية</p>
+            <p className="legend-title">النتيجة الحالية</p>
             <div className="result-box">
-              <div className="result-score">{score}%</div>
+              <div className="result-score">{totalScore}%</div>
               <div>أولوية {priority.label}</div>
               <small>{priority.range} · {priority.text}</small>
             </div>
@@ -233,43 +278,45 @@ export default function AssessmentPage() {
           <aside className="form-card">
             <h2>بيانات الحديقة</h2>
 
-            {loadingMaster && <p className="panel-desc">جاري تحميل المشاريع...</p>}
-            {msg && <p className="panel-desc">{msg}</p>}
-
             <div className="field">
               <label>المشروع</label>
-              <div className="project-picker">
-                {projects.length === 0 && !loadingMaster && <p className="panel-desc">لا توجد مشاريع مقروءة من القاعدة.</p>}
+              <div className="items-grid">
                 {projects.map((project) => (
                   <button
-                    type="button"
                     key={project.id}
-                    className={`picker-card ${projectId === project.id ? "active" : ""}`}
-                    onClick={() => { setProjectId(project.id); setGardenId(""); }}
+                    type="button"
+                    className={`option ${projectId === project.id ? "active" : ""}`}
+                    onClick={() => {
+                      setProjectId(project.id);
+                      setGardenId("");
+                    }}
                   >
-                    <b>{project.name}</b>
+                    <b>{projectLabel(project)}</b>
                   </button>
                 ))}
               </div>
+              {!projects.length && <p className="panel-desc">لا توجد مشاريع في القاعدة.</p>}
             </div>
 
             <div className="field">
               <label>الحديقة</label>
-              {!projectId && <p className="panel-desc">اختر مشروعًا أولاً لعرض حدائقه.</p>}
-              {projectId && projectGardens.length === 0 && <p className="panel-desc">لا توجد حدائق مرتبطة بهذا المشروع.</p>}
-              <div className="garden-picker">
+              <div className="items-grid">
                 {projectGardens.map((garden) => (
                   <button
-                    type="button"
                     key={garden.id}
-                    className={`picker-card ${gardenId === garden.id ? "active" : ""}`}
+                    type="button"
+                    className={`option ${gardenId === garden.id ? "active" : ""}`}
                     onClick={() => setGardenId(garden.id)}
                   >
-                    <b>{garden.name}</b>
+                    <b>{gardenLabel(garden)}</b>
+                    <br />
                     <small>{garden.district || "بدون حي"}</small>
                   </button>
                 ))}
               </div>
+              {projectId && !projectGardens.length && (
+                <p className="panel-desc">لا توجد حدائق مرتبطة بهذا المشروع.</p>
+              )}
             </div>
 
             <button className="submit" onClick={saveAssessment} disabled={saving}>
@@ -280,26 +327,53 @@ export default function AssessmentPage() {
           <section className="form-card">
             <h2>المعايير والبنود</h2>
             <div className="criteria-form">
-              {criterionDefinitions.map((criterion, ci) => (
+              {criterionDefinitions.map((criterion, criterionIndex) => (
                 <div className="criterion-form" key={criterion.name}>
                   <div className="criterion-form-head">
                     <h3>{criterion.name}</h3>
-                    <b>{criteria[ci]?.value || 0}/{criterion.weight}</b>
+                    <b>{criteria[criterionIndex]?.value || 0}/{criterion.weight}</b>
                   </div>
+
                   <div className="items-grid">
-                    {criterion.items.map((item, ii) => {
-                      const key = `${ci}-${ii}`;
+                    {criterion.items.map((item, itemIndex) => {
+                      const key = `${criterionIndex}-${itemIndex}`;
                       return (
                         <div className="item-card" key={key}>
                           <h4>{item.label}</h4>
+
                           <div className="item-row">
                             <label>الدرجة / {item.max}</label>
-                            <input type="number" min={0} max={item.max} value={scores[key] ?? ""} onChange={(e) => setItemScore(ci, ii, item.max, e.target.value)} placeholder="0" />
+                            <input
+                              type="number"
+                              min={0}
+                              max={item.max}
+                              value={scores[key] ?? ""}
+                              onChange={(event) =>
+                                setItemScore(criterionIndex, itemIndex, item.max, event.target.value)
+                              }
+                              placeholder="0"
+                            />
                           </div>
+
                           <div className="file-mini">
-                            <label className="change-photo">{previews[key] ? "تغيير الصورة" : "رفع صورة للبند"}</label>
-                            <input type="file" accept="image/*" onChange={(e) => setItemFile(ci, ii, e.target.files?.[0] || null)} />
-                            {previews[key] && <div className="preview"><div className="preview-box"><img src={previews[key]} alt="معاينة" /></div></div>}
+                            <label className="change-photo">
+                              {previews[key] ? "تغيير الصورة" : "رفع صورة للبند"}
+                            </label>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(event) =>
+                                setItemFile(criterionIndex, itemIndex, event.target.files?.[0] || null)
+                              }
+                            />
+
+                            {previews[key] && (
+                              <div className="preview">
+                                <div className="preview-box">
+                                  <img src={previews[key]} alt="معاينة" />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

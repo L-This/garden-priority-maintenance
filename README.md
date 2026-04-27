@@ -1,16 +1,12 @@
-# نسخة معدلة حسب طلبك
+# نسخة الحفظ النهائي
 
-التعديلات:
-- حذف مؤشر متوسط الأولوية من لوحة النتائج.
-- صفحة التقييم تجلب المشاريع والحدائق من قاعدة Supabase.
-- كل بند داخل المعيار له حقل درجة يدخله المستخدم.
-- كل بند له رفع صورة مستقل.
-- يمكن تغيير الصورة برفع صورة أخرى لنفس البند قبل الحفظ.
+تحفظ التقييم فعليًا في Supabase:
+- garden_assessments
+- assessment_criteria
+- criterion_photos
+- Storage bucket: criterion-photos
 
-## مهم
-شغّل ملف `supabase/schema.sql` في Supabase.
-ثم أضف المشاريع والحدائق في جدولي:
-- projects
-- gardens
-
-جدول gardens يحتاج project_id من جدول projects.
+بعد الرفع:
+1. شغّل supabase/schema.sql
+2. اعمل Redeploy في Vercel
+3. افتح /assessment وجرب الحفظ
