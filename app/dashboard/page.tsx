@@ -136,17 +136,18 @@ function mapRowsToGardens(rows: any[]): GardenAssessment[] {
 export default function DashboardPage() {
   const [gardens, setGardens] = useState<GardenAssessment[]>([]);
   const [activeMetric, setActiveMetric] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [mode, setMode] = useState<"real" | "demo">("real");
-  const [search, setSearch] = useState("");
-  const [projectFilter, setProjectFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   async function loadRealData() {
     setMode("real");
     setLoading(true);
+    setActiveMetric(null);
+    setSelectedProject(null);
     setMessage("");
+
     const { data, error } = await supabase
       .from("garden_assessments")
       .select("*, assessment_criteria(*, criterion_photos(*))")
@@ -165,27 +166,11 @@ export default function DashboardPage() {
   function showDemoData() {
     setMode("demo");
     setActiveMetric(null);
+    setSelectedProject(null);
     setMessage("أنت الآن تستعرض بيانات تجريبية من داخل الواجهة فقط، ولن يتم حفظها في قاعدة البيانات.");
     setGardens(demoGardens);
     setLoading(false);
   }
-
-  async function deleteDemoDataFromDatabase() {
-    const ok = confirm("سيتم حذف البيانات التجريبية الموجودة داخل Supabase فقط. هل تريد المتابعة؟");
-    if (!ok) return;
-
-    setLoading(true);
-    setMessage("جاري حذف البيانات التجريبية من قاعدة البيانات...");
-
-    const demoNames = demoGardens.map((g) => g.name);
-
-    await supabase.from("garden_assessments").delete().eq("is_demo", true);
-    await supabase.from("garden_assessments").delete().in("garden_name", demoNames);
-
-    setMessage("تم حذف البيانات التجريبية من قاعدة البيانات. يتم الآن عرض البيانات الحقيقية فقط.");
-    await loadRealData();
-  }
-
 
   async function deleteAssessment(id: string) {
     if (mode !== "real") {
@@ -222,7 +207,7 @@ export default function DashboardPage() {
   }
 
   function exportCsv() {
-    const rows = filteredGardens.map((garden) => ({
+    const rows = visibleGardens.map((garden) => ({
       "اسم الحديقة": garden.name,
       "المشروع": garden.project,
       "الحي": garden.district,
@@ -251,47 +236,42 @@ export default function DashboardPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `garden-priority-${mode}.csv`;
+    link.download = `garden-priority-${selectedProject || "all"}-${mode}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
 
   useEffect(() => { loadRealData(); }, []);
 
-
   const orderedGardens = useMemo(() => [...gardens].sort((a, b) => b.score - a.score), [gardens]);
 
   const projects = useMemo(() => Array.from(new Set(gardens.map((garden) => garden.project))).sort(), [gardens]);
 
-  const filteredGardens = useMemo(() => {
-    const term = search.trim();
-    return orderedGardens.filter((garden) => {
-      const matchesSearch =
-        !term ||
-        garden.name.includes(term) ||
-        garden.project.includes(term) ||
-        garden.district.includes(term);
-
-      const matchesProject = projectFilter === "all" || garden.project === projectFilter;
-      const matchesPriority = priorityFilter === "all" || getPriority(garden.score).label === priorityFilter;
-
-      return matchesSearch && matchesProject && matchesPriority;
-    });
-  }, [orderedGardens, search, projectFilter, priorityFilter]);
+  const visibleGardens = useMemo(() => {
+    if (!selectedProject || selectedProject === "all") return orderedGardens;
+    return orderedGardens.filter((garden) => garden.project === selectedProject);
+  }, [orderedGardens, selectedProject]);
 
   const stats = useMemo(() => {
-    const average = filteredGardens.length ? Math.round(filteredGardens.reduce((sum, g) => sum + g.score, 0) / filteredGardens.length) : 0;
+    const average = visibleGardens.length ? Math.round(visibleGardens.reduce((sum, g) => sum + g.score, 0) / visibleGardens.length) : 0;
     return {
-      total: filteredGardens.length,
-      critical: filteredGardens.filter((g) => getPriority(g.score).label === "قصوى").length,
-      high: filteredGardens.filter((g) => getPriority(g.score).label === "عالية").length,
-      medium: filteredGardens.filter((g) => getPriority(g.score).label === "متوسطة").length,
-      low: filteredGardens.filter((g) => getPriority(g.score).label === "منخفضة").length,
+      total: visibleGardens.length,
+      critical: visibleGardens.filter((g) => getPriority(g.score).label === "قصوى").length,
+      high: visibleGardens.filter((g) => getPriority(g.score).label === "عالية").length,
+      medium: visibleGardens.filter((g) => getPriority(g.score).label === "متوسطة").length,
+      low: visibleGardens.filter((g) => getPriority(g.score).label === "منخفضة").length,
       average,
     };
-  }, [filteredGardens]);
+  }, [visibleGardens]);
 
   const toggle = (key: string) => setActiveMetric(activeMetric === key ? null : key);
+
+  const selectProject = (project: string) => {
+    setSelectedProject(project);
+    setActiveMetric(null);
+  };
+
+  const activeProjectTitle = selectedProject === "all" ? "كافة المشاريع" : selectedProject;
 
   return (
     <main className="page">
@@ -300,12 +280,11 @@ export default function DashboardPage() {
           <div>
             <div className="pill">🌳 مركز القرار التشغيلي لصيانة الحدائق</div>
             <h1>مؤشر أولوية صيانة الحدائق</h1>
-            <p>واجهة نتائج تعرض المؤشرات فقط. عند الضغط على أي مؤشر تظهر البيانات الخاصة به فقط، وتبقى تفاصيل التقييم والصور مخفية داخل كل حديقة.</p>
+            <p>واجهة نتائج تبدأ ببوابات المشاريع. اختر كافة المشاريع أو مشروعًا محددًا لعرض مؤشراته، ثم اضغط على أي مؤشر لعرض حدائقه وتفاصيله.</p>
             <div className="nav-actions">
               <Link className="action" href="/assessment">+ تقييم حديقة جديدة</Link>
               <button className={`action ${mode === "real" ? "" : "secondary"}`} onClick={loadRealData}>عرض البيانات الحقيقية</button>
               <button className={`action ${mode === "demo" ? "" : "secondary"}`} onClick={showDemoData}>عرض البيانات التجريبية</button>
-              <button className="action secondary" onClick={deleteDemoDataFromDatabase}>حذف التجريبي من القاعدة</button>
             </div>
             {message && <p>{message}</p>}
           </div>
@@ -317,45 +296,60 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <section className="filters">
-          <div className="filter-field">
-            <label>بحث سريع</label>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="اسم الحديقة أو المشروع أو الحي..." />
-          </div>
+        <section className="project-gates">
+          <button className={`project-gate ${selectedProject === "all" ? "active" : ""}`} onClick={() => selectProject("all")}>
+            <div>
+              <span className="gate-kicker">بوابة عامة</span>
+              <h3>كافة المشاريع</h3>
+              <p>عرض مؤشرات جميع الحدائق المسجلة.</p>
+            </div>
+            <b>{gardens.length}</b>
+          </button>
 
-          <div className="filter-field">
-            <label>المشروع</label>
-            <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
-              <option value="all">كل المشاريع</option>
-              {projects.map((project) => <option key={project} value={project}>{project}</option>)}
-            </select>
-          </div>
-
-          <div className="filter-field">
-            <label>الأولوية</label>
-            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
-              <option value="all">كل الأولويات</option>
-              <option value="قصوى">أولوية قصوى</option>
-              <option value="عالية">أولوية عالية</option>
-              <option value="متوسطة">أولوية متوسطة</option>
-              <option value="منخفضة">أولوية منخفضة</option>
-            </select>
-          </div>
-
-          <button className="filter-btn" onClick={exportCsv}>تصدير CSV</button>
-          <button className="filter-btn secondary" onClick={() => { setSearch(""); setProjectFilter("all"); setPriorityFilter("all"); }}>مسح الفلاتر</button>
+          {projects.map((project) => {
+            const count = gardens.filter((garden) => garden.project === project).length;
+            const avg = count ? Math.round(gardens.filter((garden) => garden.project === project).reduce((sum, g) => sum + g.score, 0) / count) : 0;
+            return (
+              <button key={project} className={`project-gate ${selectedProject === project ? "active" : ""}`} onClick={() => selectProject(project)}>
+                <div>
+                  <span className="gate-kicker">بوابة مشروع</span>
+                  <h3>{project}</h3>
+                  <p>{count} حديقة · متوسط المؤشر {avg}%</p>
+                </div>
+                <b>{count}</b>
+              </button>
+            );
+          })}
         </section>
 
-        <section className="stats">
-          <StatCard title="إجمالي الحدائق" value={stats.total} subtitle={mode === "demo" ? "بيانات تجريبية" : "بيانات حقيقية"} icon={icons.trees} active={activeMetric === "total"} onClick={() => toggle("total")} />
-          <StatCard title="أولوية قصوى" value={stats.critical} subtitle="تدخل عاجل" icon={icons.alert} active={activeMetric === "critical"} onClick={() => toggle("critical")} />
-          <StatCard title="أولوية عالية" value={stats.high} subtitle="صيانة قريبة" icon={icons.trend} active={activeMetric === "high"} onClick={() => toggle("high")} />
-          <StatCard title="أولوية متوسطة" value={stats.medium} subtitle="ضمن الخطة" icon={icons.chart} active={activeMetric === "medium"} onClick={() => toggle("medium")} />
-          <StatCard title="أولوية منخفضة" value={stats.low} subtitle="متابعة دورية" icon={icons.gauge} active={activeMetric === "low"} onClick={() => toggle("low")} />
-          <StatCard title="متوسط المؤشر" value={`${stats.average}%`} subtitle={mode === "demo" ? "للتجربة فقط" : "للبيانات الحقيقية"} icon={icons.wrench} active={activeMetric === "average"} onClick={() => toggle("average")} />
-        </section>
+        {!selectedProject ? (
+          <section className="panel empty">
+            <div className="panel-kicker">ابدأ من بوابات المشاريع</div>
+            <h2>اختر كافة المشاريع أو مشروعًا محددًا</h2>
+            <p>لن تظهر المؤشرات حتى يختار المستخدم نطاق العرض المناسب.</p>
+          </section>
+        ) : (
+          <>
+            <div className="selected-project-bar">
+              <div>
+                <span>النطاق الحالي</span>
+                <h2>{activeProjectTitle}</h2>
+              </div>
+              <button className="filter-btn" onClick={exportCsv}>تصدير CSV</button>
+            </div>
 
-        {loading ? <section className="panel empty"><h2>جاري تحميل البيانات...</h2></section> : <IndicatorPanel activeMetric={activeMetric} gardens={filteredGardens} stats={stats} mode={mode} onDelete={deleteAssessment} />}
+            <section className="stats">
+              <StatCard title="إجمالي الحدائق" value={stats.total} subtitle={mode === "demo" ? "بيانات تجريبية" : "بيانات حقيقية"} icon={icons.trees} active={activeMetric === "total"} onClick={() => toggle("total")} />
+              <StatCard title="أولوية قصوى" value={stats.critical} subtitle="تدخل عاجل" icon={icons.alert} active={activeMetric === "critical"} onClick={() => toggle("critical")} />
+              <StatCard title="أولوية عالية" value={stats.high} subtitle="صيانة قريبة" icon={icons.trend} active={activeMetric === "high"} onClick={() => toggle("high")} />
+              <StatCard title="أولوية متوسطة" value={stats.medium} subtitle="ضمن الخطة" icon={icons.chart} active={activeMetric === "medium"} onClick={() => toggle("medium")} />
+              <StatCard title="أولوية منخفضة" value={stats.low} subtitle="متابعة دورية" icon={icons.gauge} active={activeMetric === "low"} onClick={() => toggle("low")} />
+              <StatCard title="متوسط المؤشر" value={`${stats.average}%`} subtitle={mode === "demo" ? "للتجربة فقط" : "للبيانات الحقيقية"} icon={icons.wrench} active={activeMetric === "average"} onClick={() => toggle("average")} />
+            </section>
+
+            {loading ? <section className="panel empty"><h2>جاري تحميل البيانات...</h2></section> : <IndicatorPanel activeMetric={activeMetric} gardens={visibleGardens} stats={stats} mode={mode} onDelete={deleteAssessment} />}
+          </>
+        )}
       </section>
     </main>
   );
