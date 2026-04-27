@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { criterionDefinitions, getPriority } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 
@@ -42,6 +42,7 @@ export default function AssessmentPage() {
   const [message, setMessage] = useState("");
   const [loadingMaster, setLoadingMaster] = useState(false);
   const [saving, setSaving] = useState(false);
+  const criteriaRef = useRef<HTMLElement | null>(null);
 
   async function loadMasterData() {
     setLoadingMaster(true);
@@ -291,6 +292,7 @@ export default function AssessmentPage() {
                       setGardenId("");
                     }}
                   >
+                    <span className="select-check">{projectId === project.id ? "✓" : ""}</span>
                     <b>{projectLabel(project)}</b>
                   </button>
                 ))}
@@ -306,8 +308,12 @@ export default function AssessmentPage() {
                     key={garden.id}
                     type="button"
                     className={`option ${gardenId === garden.id ? "active" : ""}`}
-                    onClick={() => setGardenId(garden.id)}
+                    onClick={() => {
+                      setGardenId(garden.id);
+                      setTimeout(() => criteriaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+                    }}
                   >
+                    <span className="select-check">{gardenId === garden.id ? "✓" : ""}</span>
                     <b>{gardenLabel(garden)}</b>
                     <br />
                     <small>{garden.district || "بدون حي"}</small>
@@ -319,12 +325,23 @@ export default function AssessmentPage() {
               )}
             </div>
 
-            <button className="submit" onClick={saveAssessment} disabled={saving}>
-              {saving ? "جاري الحفظ..." : "حفظ التقييم"}
+            <div className="selection-status">
+              <div>
+                <span>المشروع المختار</span>
+                <b>{selectedProject ? projectLabel(selectedProject) : "لم يتم الاختيار"}</b>
+              </div>
+              <div>
+                <span>الحديقة الحالية</span>
+                <b>{selectedGarden ? gardenLabel(selectedGarden) : "لم يتم الاختيار"}</b>
+              </div>
+            </div>
+
+            <button className="submit" onClick={saveAssessment} disabled={saving || !projectId || !gardenId}>
+              {saving ? "جاري الحفظ..." : projectId && gardenId ? "حفظ التقييم" : "اختر المشروع والحديقة أولًا"}
             </button>
           </aside>
 
-          <section className="form-card">
+          <section className="form-card" ref={criteriaRef}>
             <h2>المعايير والبنود</h2>
             <div className="criteria-form">
               {criterionDefinitions.map((criterion, criterionIndex) => (
