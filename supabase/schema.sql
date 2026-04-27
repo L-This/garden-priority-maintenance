@@ -16,3 +16,22 @@ insert into storage.buckets(id,name,public) values('criterion-photos','criterion
 drop policy if exists "public read criterion photos bucket" on storage.objects; drop policy if exists "public upload criterion photos bucket" on storage.objects;
 create policy "public read criterion photos bucket" on storage.objects for select using(bucket_id='criterion-photos'); create policy "public upload criterion photos bucket" on storage.objects for insert with check(bucket_id='criterion-photos');
 insert into public.projects(name) values ('مشروع بريمان وطيبة'),('مشروع الحمدانية'),('مشروع التحلية'),('مشروع الشروق') on conflict(name) do nothing;
+
+
+-- إصلاحات توافق إضافية
+alter table public.gardens add column if not exists district text;
+alter table public.garden_assessments add column if not exists score int;
+alter table public.garden_assessments add column if not exists project text;
+alter table public.garden_assessments add column if not exists district text;
+alter table public.garden_assessments add column if not exists priority text;
+alter table public.garden_assessments add column if not exists is_demo boolean default false;
+alter table public.assessment_criteria add column if not exists weight int;
+alter table public.assessment_criteria add column if not exists selected_label text;
+alter table public.assessment_criteria add column if not exists value int;
+
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.projects to anon, authenticated;
+grant select, insert, update, delete on public.gardens to anon, authenticated;
+grant select, insert, update, delete on public.garden_assessments to anon, authenticated;
+grant select, insert, update, delete on public.assessment_criteria to anon, authenticated;
+grant select, insert, update, delete on public.criterion_photos to anon, authenticated;
