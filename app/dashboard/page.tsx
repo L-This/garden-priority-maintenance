@@ -64,12 +64,12 @@ function IndicatorPanel({ activeMetric, gardens, stats, mode, onDelete }: any) {
                 <div className="meta">{garden.project} · {garden.district}</div>
                 <div className="bar"><div className={priority.tone} style={{ width: `${garden.score}%` }} /></div>
                 <div className="open-card">اضغط لعرض أسباب هذه الحديقة</div>
+                {mode === "real" && (
+                  <button className="delete-btn" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onDelete(garden.id); }}>
+                    حذف التقييم
+                  </button>
+                )}
               </summary>
-              {mode === "real" && (
-                <button className="delete-btn" onClick={(event) => { event.preventDefault(); onDelete(garden.id); }}>
-                  حذف التقييم
-                </button>
-              )}
 
               <div className="reasons">
                 <b>أبرز الأسباب</b>
@@ -196,14 +196,29 @@ export default function DashboardPage() {
     const ok = confirm("هل تريد حذف هذا التقييم نهائيًا؟ سيتم حذف المعايير والصور المرتبطة به من قاعدة البيانات.");
     if (!ok) return;
 
-    const { error } = await supabase.from("garden_assessments").delete().eq("id", id);
+    setMessage("جاري حذف التقييم...");
+    setLoading(true);
+
+    const { error, count } = await supabase
+      .from("garden_assessments")
+      .delete({ count: "exact" })
+      .eq("id", id);
+
     if (error) {
-      setMessage(`تعذر حذف التقييم: ${error.message}`);
+      setLoading(false);
+      setMessage(`تعذر حذف التقييم: ${error.message}. تأكد من تشغيل سياسات الحذف في ملف SQL.`);
       return;
     }
 
-    setMessage("تم حذف التقييم بنجاح.");
-    await loadRealData();
+    if (!count) {
+      setLoading(false);
+      setMessage("لم يتم حذف أي سجل. قد تكون صلاحيات الحذف غير مفعلة أو أن السجل غير موجود.");
+      return;
+    }
+
+    setGardens((current) => current.filter((garden) => garden.id !== id));
+    setLoading(false);
+    setMessage("تم حذف التقييم بنجاح وتم تحديث المؤشرات تلقائيًا.");
   }
 
   function exportCsv() {
