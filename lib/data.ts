@@ -1,5 +1,5 @@
 
-export type Tone="red"|"orange"|"yellow"|"emerald";
+export type Tone="red"|"rose"|"yellow"|"emerald";
 export type Criterion={name:string;weight:number;selected:string;value:number;photos?:string[]};
 export type GardenAssessment={id:string;name:string;project:string;district:string;score:number;lastEvaluation:string;criteria:Criterion[]};
 export type ItemDef={label:string;max:number};
@@ -34,5 +34,5 @@ export const demoGardens:GardenAssessment[]=[
 {name:"تكلفة أعمال التطوير والتحسين",weight:10,selected:"عالية:3",value:3},
 {name:"كثرة البلاغات والشكاوي",weight:15,selected:"عالية:15",value:15}]}
 ];
-export function getPriority(score:number){if(score>=90)return{label:"قصوى",range:"90 - 100",tone:"red" as Tone,text:"تدخل عاجل"};if(score>=75)return{label:"عالية",range:"75 - 89",tone:"orange" as Tone,text:"صيانة قريبة"};if(score>=65)return{label:"متوسطة",range:"65 - 74",tone:"yellow" as Tone,text:"ضمن الخطة"};return{label:"منخفضة",range:"50 - 64",tone:"emerald" as Tone,text:"متابعة دورية"}}
+export function getPriority(score:number){if(score>=90)return{label:"قصوى",range:"90 - 100",tone:"red" as Tone,text:"تدخل عاجل"};if(score>=75)return{label:"عالية",range:"75 - 89",tone:"rose" as Tone,text:"صيانة قريبة"};if(score>=65)return{label:"متوسطة",range:"65 - 74",tone:"yellow" as Tone,text:"ضمن الخطة"};return{label:"منخفضة",range:"50 - 64",tone:"emerald" as Tone,text:"متابعة دورية"}}
 export function getMainReasons(garden:GardenAssessment){return[...garden.criteria].sort((a,b)=>b.value-a.value).slice(0,3)}

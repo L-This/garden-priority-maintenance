@@ -209,3 +209,117 @@
     text-align: center;
   }
 }
+
+
+/* Priority color system: header + cards */
+.legend-row {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+.legend-row::before {
+  content: "";
+  width: 8px;
+  height: 70%;
+  border-radius: 999px;
+  position: absolute;
+  inset-inline-start: 10px;
+  top: 15%;
+}
+
+.legend-row.priority-critical {
+  background: rgba(239, 68, 68, .18) !important;
+  border-color: rgba(248, 113, 113, .35) !important;
+}
+
+.legend-row.priority-critical::before {
+  background: #ef4444;
+}
+
+.legend-row.priority-high {
+  background: rgba(244, 63, 94, .13) !important;
+  border-color: rgba(251, 113, 133, .30) !important;
+}
+
+.legend-row.priority-high::before {
+  background: #fb7185;
+}
+
+.legend-row.priority-medium {
+  background: rgba(234, 179, 8, .18) !important;
+  border-color: rgba(253, 224, 71, .35) !important;
+}
+
+.legend-row.priority-medium::before {
+  background: #eab308;
+}
+
+.legend-row.priority-low {
+  background: rgba(16, 185, 129, .18) !important;
+  border-color: rgba(110, 231, 183, .35) !important;
+}
+
+.legend-row.priority-low::before {
+  background: #10b981;
+}
+
+.badge.red {
+  color: #991b1b;
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+}
+
+.bar .red {
+  background: linear-gradient(270deg, #ef4444, #b91c1c) !important;
+}
+
+.badge.rose {
+  color: #be123c;
+  background: #fff1f2 !important;
+  border-color: #fecdd3 !important;
+}
+
+.bar .rose {
+  background: linear-gradient(270deg, #fb7185, #f43f5e) !important;
+}
+
+.badge.yellow {
+  color: #92400e;
+  background: #fefce8 !important;
+  border-color: #fde68a !important;
+}
+
+.bar .yellow {
+  background: linear-gradient(270deg, #facc15, #eab308) !important;
+}
+
+.badge.emerald {
+  color: #047857;
+  background: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+}
+
+.bar .emerald {
+  background: linear-gradient(270deg, #34d399, #059669) !important;
+}
+
+.garden-card:has(.badge.red) {
+  border-color: #fecaca;
+  box-shadow: 0 18px 36px rgba(239,68,68,.10);
+}
+
+.garden-card:has(.badge.rose) {
+  border-color: #fecdd3;
+  box-shadow: 0 18px 36px rgba(244,63,94,.08);
+}
+
+.garden-card:has(.badge.yellow) {
+  border-color: #fde68a;
+  box-shadow: 0 18px 36px rgba(234,179,8,.10);
+}
+
+.garden-card:has(.badge.emerald) {
+  border-color: #a7f3d0;
+  box-shadow: 0 18px 36px rgba(16,185,129,.10);
+}
